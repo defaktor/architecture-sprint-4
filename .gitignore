@@ -1,0 +1,12 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+/architecture-sprint-4.iml
+/codeStyles/codeStyleConfig.xml
+/dbnavigator.xml
+/misc.xml
+/modules.xml
+/codeStyles/Project.xml
+/vcs.xml
+/.idea/*
+/.gigaide/gigaide.properties
