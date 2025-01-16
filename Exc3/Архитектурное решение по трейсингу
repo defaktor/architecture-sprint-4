@@ -1,0 +1,210 @@
+### Мотивация для внедрения трейсинга
+
+**Почему нужно внедрить трейсинг?**
+1. **Прозрачность процессов**: Трейсинг позволит команде видеть, где именно заказ находится в данный момент, и выявлять узкие места в системе.
+2. **Ускорение диагностики проблем**: Если заказ завис или потерялся, трейсинг поможет быстро определить, на каком этапе это произошло.
+3. **Улучшение пользовательского опыта**: Клиенты и операторы смогут получать актуальную информацию о статусе заказа, что уменьшит количество жалоб.
+4. **Оптимизация процессов**: Анализ данных трейсинга поможет выявить узкие места и улучшить производительность системы.
+5. **Снижение потерь бизнеса**: Уменьшение количества потерянных заказов и ускорение их обработки положительно скажется на доходах компании.
+
+**Технические и бизнес-метрики, на которые повлияет трейсинг:**
+1. **Среднее время обработки заказа**: Уменьшение времени обработки заказов за счёт выявления и устранения узких мест.
+2. **Количество потерянных заказов**: Снижение количества заказов, которые теряются в системе.
+3. **Время диагностики проблем**: Уменьшение времени, необходимого для выявления и устранения проблем.
+4. **Удовлетворённость клиентов**: Улучшение отзывов клиентов за счёт прозрачности и скорости обработки заказов.
+5. **Эффективность операторов**: Увеличение производительности операторов за счёт быстрого доступа к информации о заказах.
+
+---
+
+### Предлагаемое решение
+
+**Как будет реализован трейсинг?**
+1. **Использование OpenTelemetry**: OpenTelemetry — это открытый стандарт для сбора, обработки и экспорта телеметрических данных (трейсы, метрики, логи). Он поддерживает множество языков программирования и интеграций с различными системами.
+2. **Интеграция с существующими системами**:
+   - **MES API**: Добавить трейсинг для отслеживания расчёта стоимости заказов и их статусов.
+   - **Shop API**: Трейсинг для отслеживания загрузки 3D-моделей и создания заказов.
+   - **CRM API**: Трейсинг для отслеживания подтверждения заказов и их статусов.
+   - **RabbitMQ**: Интеграция с очередями для отслеживания сообщений между системами.
+3. **Хранение данных**: Использование распределённой системы хранения трейсов, такой как **Jaeger** или **Zipkin**.
+4. **Визуализация данных**: Настройка дашбордов в **Grafana** для визуализации трейсов и метрик.
+
+**Новые компоненты на схеме:**
+- **OpenTelemetry SDK**: Интегрируется в каждый сервис для сбора данных.
+- **Jaeger/Zipkin**: Система для хранения и анализа трейсов.
+- **Grafana**: Дашборды для визуализации данных.
+
+**Обновлённая диаграмма**:
+@startuml
+!define RECTANGLE class
+
+RECTANGLE "MES API" as MESAPI {
+  - Assigns orders on operators
+  - Shows list of orders
+  - Calculates price of the order
+}
+
+RECTANGLE "Messages Queue" as MessagesQueue {
+  - Send messages about new orders, changes of statuses between containers, has several topics
+}
+
+RECTANGLE "Internet Shop" as InternetShop {
+  - User can make an order, upload 3d model, work in 3d editor
+}
+
+RECTANGLE "MES" as MES {
+  - Provide interface to assign orders on operators, shows list of orders
+}
+
+RECTANGLE "Operator" as Operator {
+  - Takes order in work, manufactures jewelry
+}
+
+RECTANGLE "Customer" as Customer {
+  - Description of external person.
+}
+
+RECTANGLE "API user" as APIUser {
+  - Description of external person.
+}
+
+RECTANGLE "Shop API" as ShopAPI {
+  - Provide list of shop items
+  - Receives user generated or uploaded 3d file
+  - Save information about order from customer perspective
+}
+
+RECTANGLE "CRM" as CRM {
+  - Description of web browser container role/responsibility.
+}
+
+RECTANGLE "CRM API" as CRMAPI {
+  - Description of container role/responsibility.
+}
+
+RECTANGLE "Shop DB" as ShopDB {
+  - Holds main information about work with customers and its orders
+}
+
+RECTANGLE "3d files storage" as 3dFilesStorage {
+  - Stores 3d files so that can be calculated
+}
+
+RECTANGLE "Seller" as Seller {
+  - Operates with order, confirms manufacturing for the user
+}
+
+RECTANGLE "MES db" as MESdb {
+  - Holds information about orders, its assignments on operators and statuses from MES perspective
+}
+
+RECTANGLE "Redis Cache" as RedisCache {
+  - Caches frequently accessed data
+}
+
+RECTANGLE "OpenTelemetry SDK" as OpenTelemetry #red {
+  - Collects traces, metrics, and logs
+}
+
+RECTANGLE "Jaeger" as Jaeger #red {
+  - Stores and analyzes traces
+}
+
+RECTANGLE "Prometheus" as Prometheus #green {
+  - Collects metrics and triggers alerts
+}
+
+RECTANGLE "Alertmanager" as Alertmanager #green {
+  - Manages alerts and sends notifications
+}
+
+RECTANGLE "Grafana" as Grafana #green {
+  - Visualizes traces and metrics
+}
+
+Customer --> InternetShop : Makes order
+InternetShop --> ShopAPI : Sends order data
+ShopAPI --> ShopDB : Stores order data
+ShopAPI --> 3dFilesStorage : Uploads files
+MESAPI --> MessagesQueue : Sends messages
+MES --> MESAPI : Interacts
+Operator --> MES : Takes orders
+APIUser --> MESAPI : Interacts
+CRM --> CRMAPI : Interacts
+CRMAPI --> ShopDB : Stores data
+Seller --> CRM : Operates with order
+MESAPI --> MESdb : Stores order data
+MESAPI --> RedisCache : Caches order data
+
+' Трейсинг
+MESAPI --> OpenTelemetry : Sends traces
+ShopAPI --> OpenTelemetry : Sends traces
+CRMAPI --> OpenTelemetry : Sends traces
+MessagesQueue --> OpenTelemetry : Sends traces
+OpenTelemetry --> Jaeger : Stores traces
+
+' Мониторинг и алертинг
+MESAPI --> Prometheus : Sends metrics
+ShopAPI --> Prometheus : Sends metrics
+CRMAPI --> Prometheus : Sends metrics
+Prometheus --> Alertmanager : Triggers alerts
+Alertmanager --> Grafana : Sends notifications
+Jaeger --> Grafana : Visualizes traces
+Prometheus --> Grafana : Visualizes metrics
+
+@enduml
+
+Описание изменений:
+
+Трейсинг:
+Добавлен компонент OpenTelemetry SDK (красный), который интегрируется в MES API, Shop API, CRM API и Messages Queue для сбора трейсов.
+Добавлен компонент Jaeger (красный) для хранения и анализа трейсов.
+Трейсы отправляются из сервисов в OpenTelemetry, а затем в Jaeger.
+Мониторинг и алертинг:
+Добавлен компонент Prometheus (зелёный) для сбора метрик и настройки алертов.
+Добавлен компонент Alertmanager (зелёный) для управления алертами и отправки уведомлений.
+Добавлен компонент Grafana (зелёный) для визуализации трейсов и метрик.
+Метрики отправляются из сервисов в Prometheus, который взаимодействует с Alertmanager и Grafana.
+
+
+---
+
+### Компромиссы
+
+1. **Сложность интеграции с проприетарными системами**: Если какая-то из систем (например, MES) не поддерживает OpenTelemetry, может потребоваться дорогостоящая доработка.
+2. **Производительность**: Внедрение трейсинга может добавить небольшую нагрузку на систему, особенно если трейсы собираются в реальном времени.
+3. **Стоимость хранения данных**: Хранение большого количества трейсов может быть дорогостоящим, особенно если данные хранятся длительное время.
+4. **Ограниченная поддержка языков**: Если в системе используются редкие языки программирования, поддержка OpenTelemetry может быть ограничена.
+
+---
+
+### Аспекты безопасности
+
+1. **Аутентификация и авторизация**: Доступ к системе трейсинга должен быть ограничен. Только сотрудники с определёнными ролями (например, "Поддержка" или "DevOps") смогут просматривать трейсы.
+2. **Шифрование данных**: Все данные трейсинга должны передаваться по защищённым каналам (HTTPS, TLS).
+3. **Ограничение доступа к данным**: Данные трейсинга должны быть доступны только внутри корпоративной сети или через VPN.
+4. **Аудит доступа**: Все запросы к системе трейсинга должны логироваться для последующего аудита.
+
+---
+
+### Дополнительное задание: Автоматический мониторинг и алертинг
+
+**Как будет реализован автоматический мониторинг и алертинг?**
+1. **Интеграция с Prometheus**: Prometheus будет собирать метрики из OpenTelemetry и других источников.
+2. **Настройка алертов**: В Prometheus будут настроены алерты на основе данных трейсинга. Например:
+   - Заказ завис на этапе расчёта стоимости более 30 минут.
+   - Сообщение в RabbitMQ не было обработано в течение определённого времени.
+3. **Уведомления**: Алерты будут отправляться в Slack или по email с использованием Alertmanager.
+4. **Дашборды в Grafana**: Настройка дашбордов для мониторинга ключевых метрик, таких как время обработки заказов, количество потерянных заказов и т.д.
+
+**Новые компоненты на схеме:**
+- **Prometheus**: Система для сбора метрик и настройки алертов.
+- **Alertmanager**: Система для управления алертами и уведомлениями.
+- **Slack/Email**: Каналы для отправки уведомлений.
+
+**Ссылка на обновлённую диаграмму с мониторингом и алертингом**: [Обновлённая диаграмма с мониторингом](https://example.com/updated-diagram-monitoring)
+
+---
+
+### Заключение
+
+Внедрение трейсинга и автоматического мониторинга позволит компании «Александрит» значительно улучшить прозрачность процессов, ускорить диагностику проблем и повысить удовлетворённость клиентов. Это также поможет оптимизировать процессы и снизить потери бизнеса.
