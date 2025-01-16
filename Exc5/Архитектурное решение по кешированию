@@ -1,0 +1,303 @@
+### Архитектурное решение для улучшения производительности MES с использованием Circuit Breaker
+
+---
+
+### Мотивация
+
+**Почему нужно внедрить кеширование и Circuit Breaker?**
+1. **Низкая скорость работы MES**: Операторы жалуются на медленную загрузку страницы с заказами, что снижает их производительность.
+2. **Долгое время выполнения заказов**: Клиенты недовольны задержками в обработке заказов, что негативно влияет на репутацию компании.
+3. **Высокая нагрузка на базу данных**: Частые запросы к базе данных MES приводят к её перегрузке, что замедляет работу системы.
+4. **Увеличение нагрузки на систему**: С ростом числа заказов нагрузка на MES увеличивается, что требует оптимизации.
+5. **Отказоустойчивость**: В случае сбоев в базе данных или других сервисах, система должна продолжать работать в ограниченном режиме, чтобы избежать полного отказа.
+
+**Какие проблемы решит кеширование и Circuit Breaker?**
+- Ускорит загрузку страницы с заказами для операторов.
+- Снизит нагрузку на базу данных MES, уменьшив количество запросов.
+- Улучшит отзывчивость системы для клиентов и операторов.
+- Повысит общую производительность системы.
+- Обеспечит отказоустойчивость: в случае сбоев система будет использовать кешированные данные или возвращать ошибки, не вызывая полного отказа.
+
+**Какие элементы системы будут включены в кеширование и Circuit Breaker?**
+- **Список заказов**: Часто запрашиваемые данные, которые можно кешировать для ускорения загрузки.
+- **Статусы заказов**: Информация о статусах заказов, которая часто обновляется, но редко изменяется в реальном времени.
+- **Данные о клиентах**: Основная информация о клиентах, которая используется при обработке заказов.
+- **Запросы к базе данных**: Circuit Breaker будет использоваться для защиты от сбоев при запросах к базе данных.
+
+---
+
+### Предлагаемое решение
+
+#### Тип кеширования: **Серверное кеширование**
+Мы выбираем серверное кеширование, так как:
+- Оно позволяет снизить нагрузку на базу данных и ускорить обработку запросов на стороне сервера.
+- Клиентское кеширование не подходит, так как данные на стороне клиента могут быстро устаревать, особенно в контексте статусов заказов.
+
+#### Паттерн кеширования: **Cache-Aside**
+Мы выбираем паттерн **Cache-Aside**, так как:
+- **Преимущества**:
+  - Позволяет гибко управлять кешем: данные загружаются в кеш только при первом запросе.
+  - Упрощает инвалидацию кеша: при изменении данных в базе кеш можно обновить или удалить.
+  - Подходит для систем с высокой нагрузкой на чтение, таких как MES.
+- **Почему не другие паттерны**:
+  - **Write-Through**: Требует синхронной записи в кеш и базу данных, что может замедлить операции записи.
+  - **Refresh-Ahead**: Сложнее в реализации и требует предсказуемости запросов, что не всегда возможно в MES.
+
+#### Паттерн **Circuit Breaker**
+Мы выбираем паттерн **Circuit Breaker**, так как:
+- **Преимущества**:
+  - Защищает систему от каскадных сбоев: при сбое в базе данных или другом сервисе, Circuit Breaker переходит в состояние "разомкнутого" контура, предотвращая дальнейшие запросы до восстановления сервиса.
+  - Улучшает отказоустойчивость: система может продолжать работать с кешированными данными или возвращать ошибки, не вызывая полного отказа.
+  - Упрощает восстановление: после восстановления сервиса Circuit Breaker автоматически переходит в состояние "замкнутого" контура.
+
+#### Диаграмма последовательности (Sequence Diagram) с Circuit Breaker
+
+```plantuml
+@startuml
+actor Operator
+participant "MES Frontend" as MESFrontend
+participant "MES API" as MESAPI
+participant "Cache (Redis)" as Cache
+participant "Circuit Breaker" as CircuitBreaker
+participant "MES Database" as MESDB
+
+Operator -> MESFrontend : Запрашивает список заказов
+MESFrontend -> MESAPI : Запрос списка заказов
+MESAPI -> Cache : Проверяет наличие данных в кеше
+alt Данные есть в кеше
+  Cache --> MESAPI : Возвращает данные из кеша
+else Данных нет в кеше
+  MESAPI -> CircuitBreaker : Проверяет состояние Circuit Breaker
+  alt Circuit Breaker замкнут
+    CircuitBreaker -> MESDB : Запрашивает данные из базы
+    MESDB --> CircuitBreaker : Возвращает данные
+    CircuitBreaker -> Cache : Сохраняет данные в кеш
+    CircuitBreaker --> MESAPI : Возвращает данные
+  else Circuit Breaker разомкнут
+    CircuitBreaker --> MESAPI : Возвращает ошибку или кешированные данные
+  end
+end
+MESAPI --> MESFrontend : Возвращает данные
+MESFrontend --> Operator : Отображает список заказов
+
+Operator -> MESFrontend : Изменяет статус заказа
+MESFrontend -> MESAPI : Отправляет запрос на изменение статуса
+MESAPI -> CircuitBreaker : Проверяет состояние Circuit Breaker
+alt Circuit Breaker замкнут
+  CircuitBreaker -> MESDB : Обновляет статус в базе данных
+  MESDB --> CircuitBreaker : Подтверждает обновление
+  CircuitBreaker -> Cache : Инвалидирует кеш (удаляет данные)
+  CircuitBreaker --> MESAPI : Возвращает результат
+else Circuit Breaker разомкнут
+  CircuitBreaker --> MESAPI : Возвращает ошибку
+end
+MESAPI --> MESFrontend : Возвращает результат
+MESFrontend --> Operator : Отображает обновлённый статус
+@enduml
+```
+
+#### Стратегия инвалидации кеша: **Программная инвалидация**
+Мы выбираем программную инвалидацию, так как:
+- **Преимущества**:
+  - Позволяет точно управлять временем жизни кеша: кеш инвалидируется только при изменении данных.
+  - Упрощает поддержку актуальности данных: кеш обновляется только при необходимости.
+- **Почему не другие стратегии**:
+  - **Временная инвалидация**: Не подходит, так как данные могут измениться в любой момент, и кеш может содержать устаревшие данные.
+  - **Инвалидация по ключу**: Сложнее в реализации, так как требует точного управления ключами.
+
+---
+
+### Сравнительный анализ стратегий инвалидации
+
+| **Стратегия**         | **Преимущества**                                                                 | **Недостатки**                                                                 |
+|------------------------|----------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| **Программная**        | Точное управление временем жизни кеша, актуальность данных                       | Требует дополнительной логики для инвалидации                                  |
+| **Временная**          | Простота реализации, не требует управления ключами                               | Кеш может содержать устаревшие данные, если изменения происходят чаще, чем TTL |
+| **Инвалидация по ключу**| Позволяет управлять отдельными элементами кеша                                   | Сложность в управлении ключами, особенно при большом количестве данных         |
+
+---
+
+### Дополнительное задание: Альтернативные решения
+
+#### Вариант 1: **Write-Through кеширование**
+- **Преимущества**:
+  - Данные всегда актуальны, так как запись происходит одновременно в кеш и базу данных.
+  - Упрощает чтение данных, так как они всегда доступны в кеше.
+- **Недостатки**:
+  - Замедляет операции записи, так как требуется синхронная запись в кеш и базу данных.
+  - Не подходит для систем с высокой нагрузкой на запись.
+
+#### Вариант 2: **Refresh-Ahead кеширование**
+- **Преимущества**:
+  - Уменьшает задержки при чтении, так как данные обновляются в фоновом режиме.
+  - Подходит для систем с предсказуемыми запросами.
+- **Недостатки**:
+  - Сложность реализации: требуется предсказание, какие данные будут запрошены.
+  - Может привести к избыточному использованию ресурсов, если данные не запрашиваются.
+
+---
+
+# Обновленная диаграмма:
+
+@startuml
+!define RECTANGLE class
+
+RECTANGLE "MES API" as MESAPI {
+  - Assigns orders on operators
+  - Shows list of orders
+  - Calculates price of the order
+}
+
+RECTANGLE "Messages Queue" as MessagesQueue {
+  - Send messages about new orders, changes of statuses between containers, has several topics
+}
+
+RECTANGLE "Internet Shop" as InternetShop {
+  - User can make an order, upload 3d model, work in 3d editor
+}
+
+RECTANGLE "MES" as MES {
+  - Provide interface to assign orders on operators, shows list of orders
+}
+
+RECTANGLE "Operator" as Operator {
+  - Takes order in work, manufactures jewelry
+}
+
+RECTANGLE "Customer" as Customer {
+  - Description of external person.
+}
+
+RECTANGLE "API user" as APIUser {
+  - Description of external person.
+}
+
+RECTANGLE "Shop API" as ShopAPI {
+  - Provide list of shop items
+  - Receives user generated or uploaded 3d file
+  - Save information about order from customer perspective
+}
+
+RECTANGLE "CRM" as CRM {
+  - Description of web browser container role/responsibility.
+}
+
+RECTANGLE "CRM API" as CRMAPI {
+  - Description of container role/responsibility.
+}
+
+RECTANGLE "Shop DB" as ShopDB {
+  - Holds main information about work with customers and its orders
+}
+
+RECTANGLE "3d files storage" as 3dFilesStorage {
+  - Stores 3d files so that can be calculated
+}
+
+RECTANGLE "Seller" as Seller {
+  - Operates with order, confirms manufacturing for the user
+}
+
+RECTANGLE "MES db" as MESdb {
+  - Holds information about orders, its assignments on operators and statuses from MES perspective
+}
+
+RECTANGLE "Redis Cache" as RedisCache #orange {
+  - Caches frequently accessed data
+}
+
+RECTANGLE "Circuit Breaker" as CircuitBreaker #orange {
+  - Prevents cascading failures by breaking the circuit when errors occur
+}
+
+RECTANGLE "OpenTelemetry SDK" as OpenTelemetry #red {
+  - Collects traces, metrics, and logs
+}
+
+RECTANGLE "Jaeger" as Jaeger #red {
+  - Stores and analyzes traces
+}
+
+RECTANGLE "Prometheus" as Prometheus #green {
+  - Collects metrics and triggers alerts
+}
+
+RECTANGLE "Alertmanager" as Alertmanager #green {
+  - Manages alerts and sends notifications
+}
+
+RECTANGLE "Grafana" as Grafana #green {
+  - Visualizes traces and metrics
+}
+
+RECTANGLE "Logstash" as Logstash #blue {
+  - Collects and processes logs
+}
+
+RECTANGLE "Elasticsearch" as Elasticsearch #blue {
+  - Stores and indexes logs
+}
+
+RECTANGLE "Kibana" as Kibana #blue {
+  - Visualizes and analyzes logs
+}
+
+Customer --> InternetShop : Makes order
+InternetShop --> ShopAPI : Sends order data
+ShopAPI --> ShopDB : Stores order data
+ShopAPI --> 3dFilesStorage : Uploads files
+MESAPI --> MessagesQueue : Sends messages
+MES --> MESAPI : Interacts
+Operator --> MES : Takes orders
+APIUser --> MESAPI : Interacts
+CRM --> CRMAPI : Interacts
+CRMAPI --> ShopDB : Stores data
+Seller --> CRM : Operates with order
+MESAPI --> MESdb : Stores order data
+MESAPI --> RedisCache : Caches order data
+
+' Трейсинг
+MESAPI --> OpenTelemetry : Sends traces
+ShopAPI --> OpenTelemetry : Sends traces
+CRMAPI --> OpenTelemetry : Sends traces
+MessagesQueue --> OpenTelemetry : Sends traces
+OpenTelemetry --> Jaeger : Stores traces
+
+' Мониторинг и алертинг
+MESAPI --> Prometheus : Sends metrics
+ShopAPI --> Prometheus : Sends metrics
+CRMAPI --> Prometheus : Sends metrics
+Prometheus --> Alertmanager : Triggers alerts
+Alertmanager --> Grafana : Sends notifications
+Jaeger --> Grafana : Visualizes traces
+Prometheus --> Grafana : Visualizes metrics
+
+' Логирование
+MESAPI --> Logstash : Sends logs
+ShopAPI --> Logstash : Sends logs
+CRMAPI --> Logstash : Sends logs
+MessagesQueue --> Logstash : Sends logs
+Logstash --> Elasticsearch : Stores logs
+Elasticsearch --> Kibana : Visualizes logs
+
+' Кеширование и Circuit Breaker
+MESAPI --> RedisCache : Reads/Writes cached data
+MESAPI --> CircuitBreaker : Checks circuit state
+CircuitBreaker --> MESdb : Sends requests to DB (if circuit is closed)
+CircuitBreaker --> RedisCache : Falls back to cache (if circuit is open)
+
+@enduml
+
+
+Описание изменений:
+
+Кеширование:
+Добавлен компонент Redis Cache (оранжевый) для кеширования часто запрашиваемых данных, таких как список заказов и статусы заказов.
+MES API взаимодействует с Redis Cache для чтения и записи кешированных данных.
+Circuit Breaker:
+Добавлен компонент Circuit Breaker (оранжевый) для предотвращения каскадных сбоев. Он проверяет состояние контура перед отправкой запросов к базе данных.
+Если контур "разомкнут" (например, при сбое базы данных), Circuit Breaker возвращает данные из кеша или ошибку, предотвращая дальнейшие запросы к базе данных.
+Связи:
+MES API взаимодействует с Redis Cache для чтения и записи кешированных данных.
+MES API использует Circuit Breaker для проверки состояния контура перед отправкой запросов к базе данных.
+Если контур "замкнут", запросы отправляются к базе данных. Если контур "разомкнут", Circuit Breaker возвращает данные из кеша или ошибку.

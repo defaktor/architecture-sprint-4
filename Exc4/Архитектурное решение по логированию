@@ -1,0 +1,292 @@
+### Мотивация для внедрения логирования
+
+**Почему нужно внедрить логирование?**
+1. **Ускорение диагностики проблем**: Логирование позволит быстро выявлять причины ошибок и нестандартных ситуаций, уменьшая время на разбор проблем.
+2. **Снижение нагрузки на поддержку**: Специалисты поддержки смогут быстрее находить корневые причины проблем, не тратя время на сбор информации от клиентов.
+3. **Прозрачность процессов**: Логирование обеспечит прозрачность работы системы, что поможет разработчикам и операторам лучше понимать, что происходит внутри сервисов.
+4. **Улучшение качества сервиса**: Сбор логов поможет выявить узкие места и улучшить производительность системы, что положительно скажется на удовлетворённости клиентов.
+5. **Анализ инцидентов**: Логирование позволит проводить анализ инцидентов и предотвращать их повторение в будущем.
+
+**Технические и бизнес-метрики, на которые повлияет логирование:**
+1. **Время диагностики проблем**: Уменьшение времени, необходимого для выявления и устранения проблем.
+2. **Количество обращений в поддержку**: Снижение количества обращений клиентов за счёт быстрого решения проблем.
+3. **Среднее время восстановления (MTTR)**: Уменьшение времени восстановления системы после сбоев.
+4. **Удовлетворённость клиентов**: Улучшение отзывов клиентов за счёт оперативного решения проблем.
+5. **Эффективность разработчиков**: Увеличение производительности разработчиков за счёт быстрого доступа к информации о проблемах.
+
+---
+
+### Предлагаемое решение
+
+#### Какие логи нужно собирать?
+1. **Изменение статуса заказа**:
+   - Уровень: **INFO**
+   - Данные: Время, идентификатор покупателя, номер заказа, старый статус, новый статус.
+   - Системы: MES API, Shop API, CRM API.
+
+2. **Создание заказа**:
+   - Уровень: **INFO**
+   - Данные: Время, идентификатор покупателя, номер заказа, данные заказа.
+   - Системы: Shop API, MES API.
+
+3. **Ошибки при обработке заказа**:
+   - Уровень: **ERROR**
+   - Данные: Время, идентификатор покупателя, номер заказа, описание ошибки, стектрейс.
+   - Системы: MES API, Shop API, CRM API.
+
+4. **Загрузка 3D-модели**:
+   - Уровень: **INFO**
+   - Данные: Время, идентификатор покупателя, номер заказа, размер файла, статус загрузки.
+   - Системы: Shop API, 3d files storage.
+
+5. **Сообщения в RabbitMQ**:
+   - Уровень: **INFO**
+   - Данные: Время, тип сообщения, отправитель, получатель, статус обработки.
+   - Системы: Messages Queue.
+
+6. **Аутентификация и авторизация**:
+   - Уровень: **WARN**
+   - Данные: Время, идентификатор пользователя, тип операции (вход/выход), статус (успех/ошибка).
+   - Системы: Все системы с аутентификацией.
+
+#### Уровни логирования:
+- **INFO**: Для стандартных операций, таких как создание заказа, изменение статуса, загрузка файлов.
+- **WARN**: Для нестандартных ситуаций, которые не приводят к ошибке, но требуют внимания (например, неудачная попытка входа).
+- **ERROR**: Для критических ошибок, которые требуют немедленного вмешательства (например, сбой при обработке заказа).
+
+---
+
+### Приоритеты для внедрения логирования и трейсинга
+
+1. **MES API**: Это ключевая система для обработки заказов, и большинство проблем возникает именно здесь.
+2. **Shop API**: Система, через которую клиенты создают заказы и загружают 3D-модели. Логирование здесь поможет быстро выявлять проблемы на этапе создания заказа.
+3. **CRM API**: Система, отвечающая за взаимодействие с клиентами и подтверждение заказов. Логирование здесь поможет отслеживать статусы заказов и выявлять проблемы с подтверждением.
+4. **Messages Queue**: Логирование сообщений в RabbitMQ поможет отслеживать задержки и потери сообщений между системами.
+
+---
+
+### Технологии для реализации логирования
+
+1. **ELK Stack (Elasticsearch, Logstash, Kibana)**:
+   - **Elasticsearch**: Для хранения и поиска логов.
+   - **Logstash**: Для сбора и обработки логов.
+   - **Kibana**: Для визуализации и анализа логов.
+
+2. **Fluentd**: Альтернатива Logstash для сбора и передачи логов.
+3. **Prometheus + Grafana**: Для мониторинга метрик и настройки алертов на основе логов.
+
+#### Новые компоненты на схеме:
+- **Logstash/Fluentd**: Для сбора логов из систем.
+- **Elasticsearch**: Для хранения логов.
+- **Kibana**: Для визуализации и анализа логов.
+- **Prometheus**: Для мониторинга метрик.
+- **Grafana**: Для визуализации метрик и логов.
+
+---
+
+### Политика безопасности
+
+1. **Доступ к логам**: Доступ к логам должен быть ограничен. Только сотрудники с определёнными ролями (например, "Поддержка", "DevOps", "Разработчики") смогут просматривать логи.
+2. **Шифрование данных**: Все логи должны передаваться по защищённым каналам (HTTPS, TLS).
+3. **Маскирование чувствительных данных**: Чувствительные данные (например, идентификаторы клиентов, номера заказов) должны быть замаскированы в логах.
+4. **Аудит доступа**: Все запросы к системе логирования должны логироваться для последующего аудита.
+
+---
+
+### Политика хранения логов
+
+1. **Хранение логов**: Логи будут храниться в Elasticsearch в отдельных индексах для каждой системы.
+2. **Срок хранения**: Логи будут храниться 30 дней для оперативного анализа и 1 год в архиве для долгосрочного анализа.
+3. **Размер логов**: Размер логов будет ограничен 100 ГБ на систему. При превышении лимита старые логи будут автоматически удаляться.
+
+---
+
+### Анализ логов и алертинг
+
+1. **Алертинг**: Настройка алертов в Prometheus и Grafana для уведомления о критических ошибках (например, сбой при обработке заказа) и аномалиях (например, резкий рост количества ошибок).
+2. **Поиск аномалий**: Использование машинного обучения или правил для выявления аномалий, таких как DDoS-атаки или резкий рост количества заказов.
+3. **Дашборды**: Настройка дашбордов в Kibana и Grafana для мониторинга ключевых метрик, таких как количество ошибок, время обработки заказов и т.д.
+
+---
+
+### Дополнительное задание: Критерии выбора технологии для работы с логами
+
+1. **Масштабируемость**: Технология должна поддерживать обработку большого объёма логов и масштабироваться по мере роста нагрузки.
+   - **Плюс**: ELK Stack и Fluentd хорошо масштабируются.
+   - **Минус**: Требует настройки кластеризации для Elasticsearch.
+
+2. **Простота интеграции**: Технология должна легко интегрироваться с существующими системами.
+   - **Плюс**: Logstash и Fluentd поддерживают множество плагинов для интеграции.
+   - **Минус**: Требуется настройка конфигураций.
+
+3. **Производительность**: Технология должна обеспечивать быструю обработку и поиск логов.
+   - **Плюс**: Elasticsearch обеспечивает высокую производительность поиска.
+   - **Минус**: Требует ресурсов для обработки большого объёма данных.
+
+4. **Безопасность**: Технология должна поддерживать шифрование данных и контроль доступа.
+   - **Плюс**: ELK Stack поддерживает шифрование и аутентификацию.
+   - **Минус**: Требуется дополнительная настройка.
+
+5. **Стоимость**: Технология должна быть экономически эффективной.
+   - **Плюс**: ELK Stack и Fluentd — открытые решения с бесплатными версиями.
+   - **Минус**: Для больших объёмов данных может потребоваться коммерческая поддержка.
+
+---
+
+# Обновлённая диаграмма с логированием
+
+@startuml
+!define RECTANGLE class
+
+RECTANGLE "MES API" as MESAPI {
+  - Assigns orders on operators
+  - Shows list of orders
+  - Calculates price of the order
+}
+
+RECTANGLE "Messages Queue" as MessagesQueue {
+  - Send messages about new orders, changes of statuses between containers, has several topics
+}
+
+RECTANGLE "Internet Shop" as InternetShop {
+  - User can make an order, upload 3d model, work in 3d editor
+}
+
+RECTANGLE "MES" as MES {
+  - Provide interface to assign orders on operators, shows list of orders
+}
+
+RECTANGLE "Operator" as Operator {
+  - Takes order in work, manufactures jewelry
+}
+
+RECTANGLE "Customer" as Customer {
+  - Description of external person.
+}
+
+RECTANGLE "API user" as APIUser {
+  - Description of external person.
+}
+
+RECTANGLE "Shop API" as ShopAPI {
+  - Provide list of shop items
+  - Receives user generated or uploaded 3d file
+  - Save information about order from customer perspective
+}
+
+RECTANGLE "CRM" as CRM {
+  - Description of web browser container role/responsibility.
+}
+
+RECTANGLE "CRM API" as CRMAPI {
+  - Description of container role/responsibility.
+}
+
+RECTANGLE "Shop DB" as ShopDB {
+  - Holds main information about work with customers and its orders
+}
+
+RECTANGLE "3d files storage" as 3dFilesStorage {
+  - Stores 3d files so that can be calculated
+}
+
+RECTANGLE "Seller" as Seller {
+  - Operates with order, confirms manufacturing for the user
+}
+
+RECTANGLE "MES db" as MESdb {
+  - Holds information about orders, its assignments on operators and statuses from MES perspective
+}
+
+RECTANGLE "Redis Cache" as RedisCache {
+  - Caches frequently accessed data
+}
+
+RECTANGLE "OpenTelemetry SDK" as OpenTelemetry #red {
+  - Collects traces, metrics, and logs
+}
+
+RECTANGLE "Jaeger" as Jaeger #red {
+  - Stores and analyzes traces
+}
+
+RECTANGLE "Prometheus" as Prometheus #green {
+  - Collects metrics and triggers alerts
+}
+
+RECTANGLE "Alertmanager" as Alertmanager #green {
+  - Manages alerts and sends notifications
+}
+
+RECTANGLE "Grafana" as Grafana #green {
+  - Visualizes traces and metrics
+}
+
+RECTANGLE "Logstash" as Logstash #blue {
+  - Collects and processes logs
+}
+
+RECTANGLE "Elasticsearch" as Elasticsearch #blue {
+  - Stores and indexes logs
+}
+
+RECTANGLE "Kibana" as Kibana #blue {
+  - Visualizes and analyzes logs
+}
+
+Customer --> InternetShop : Makes order
+InternetShop --> ShopAPI : Sends order data
+ShopAPI --> ShopDB : Stores order data
+ShopAPI --> 3dFilesStorage : Uploads files
+MESAPI --> MessagesQueue : Sends messages
+MES --> MESAPI : Interacts
+Operator --> MES : Takes orders
+APIUser --> MESAPI : Interacts
+CRM --> CRMAPI : Interacts
+CRMAPI --> ShopDB : Stores data
+Seller --> CRM : Operates with order
+MESAPI --> MESdb : Stores order data
+MESAPI --> RedisCache : Caches order data
+
+' Трейсинг
+MESAPI --> OpenTelemetry : Sends traces
+ShopAPI --> OpenTelemetry : Sends traces
+CRMAPI --> OpenTelemetry : Sends traces
+MessagesQueue --> OpenTelemetry : Sends traces
+OpenTelemetry --> Jaeger : Stores traces
+
+' Мониторинг и алертинг
+MESAPI --> Prometheus : Sends metrics
+ShopAPI --> Prometheus : Sends metrics
+CRMAPI --> Prometheus : Sends metrics
+Prometheus --> Alertmanager : Triggers alerts
+Alertmanager --> Grafana : Sends notifications
+Jaeger --> Grafana : Visualizes traces
+Prometheus --> Grafana : Visualizes metrics
+
+' Логирование
+MESAPI --> Logstash : Sends logs
+ShopAPI --> Logstash : Sends logs
+CRMAPI --> Logstash : Sends logs
+MessagesQueue --> Logstash : Sends logs
+Logstash --> Elasticsearch : Stores logs
+Elasticsearch --> Kibana : Visualizes logs
+
+@enduml
+
+Описание изменений:
+
+Логирование:
+Добавлен компонент Logstash (синий) для сбора и обработки логов.
+Добавлен компонент Elasticsearch (синий) для хранения и индексации логов.
+Добавлен компонент Kibana (синий) для визуализации и анализа логов.
+Логи отправляются из MES API, Shop API, CRM API и Messages Queue в Logstash, который затем передаёт их в Elasticsearch для хранения. Kibana используется для визуализации и анализа логов.
+Связи:
+Логи из MES API, Shop API, CRM API и Messages Queue отправляются в Logstash.
+Logstash передаёт логи в Elasticsearch.
+Kibana визуализирует логи, хранящиеся в Elasticsearch.
+
+
+### Заключение
+
+Внедрение логирования и трейсинга позволит компании «Александрит» значительно улучшить прозрачность процессов, ускорить диагностику проблем и снизить нагрузку на поддержку. Это также поможет улучшить качество сервиса и повысить удовлетворённость клиентов.
